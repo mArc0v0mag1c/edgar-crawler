@@ -1,0 +1,29 @@
+[project]
+name = "edgar-crawler"
+version = "0.1.0"
+description = "Academic research project: edgar-crawler"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    # Packages installed automatically during setup:
+    # - Data analysis: jupyter, pandas, matplotlib, polars, pyarrow
+    # - Claude skills: pypdf, reportlab, pdf2image, pillow, mistralai, python-dotenv, zotero-mcp
+    #
+    # Add more as needed: uv add <package>
+    "jupyter>=1.1.1",
+    "matplotlib>=3.10.8",
+    "mistralai>=1.12.1",
+    "pandas>=3.0.0",
+    "pdf2image>=1.17.0",
+    "pillow>=12.1.1",
+    "polars>=1.38.1",
+    "pyarrow>=23.0.0",
+    "pypdf>=6.7.0",
+    "python-dotenv>=1.2.1",
+    "reportlab>=4.4.9",
+    "zotero-mcp>=0.1.2",
+]
+
+[tool.uv.sources]
+# Uncomment and configure as needed:
+zotero-mcp = { git = "https://github.com/54yyyu/zotero-mcp.git" }

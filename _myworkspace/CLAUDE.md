@@ -13,11 +13,11 @@
 
 You are working in the `edgar-crawler/_myworkspace/` folder, which is a research workspace inside a forked Git repository. This folder contains:
 - Git-tracked folders: `Code/`, `Figures/`, `Tables/`, `Paper/`, `Slides/`, `Plans/`
-- Symlinked folders: `Data`, `Notes`, `Output` (these link to `../../edgar-crawler-Share/` which is outside the Git repo)
+- Symlinked folders: `Data`, `Notes`, `Output` (these link to `edgar-crawler-Share/` in Google Drive)
 
 The parent folder `edgar-crawler/` contains the original forked repository codebase. Your research workspace is separate from the original code.
 
-You can access all folders normally - the symlinks are transparent. Files in symlinked folders are NOT tracked by Git but are synced via Dropbox.
+You can access all folders normally - the symlinks are transparent. Files in symlinked folders are NOT tracked by Git but are synced via Google Drive.
 
 ## Project Structure
 
@@ -32,7 +32,7 @@ This project follows a two-folder structure designed for academic research on to
 - `_myworkspace/Slides/` - LaTeX presentations
 - `_myworkspace/Data`, `_myworkspace/Notes`, `_myworkspace/Output` - Symlinks to edgar-crawler-Share/
 
-### Dropbox Folder (edgar-crawler-Share/)
+### Google Drive Folder (edgar-crawler-Share/)
 - `Data/` - Raw and processed datasets (read-only, not version-tracked)
 - `Notes/` - Research notes and documentation
 - `Output/` - Intermediate results organized by task matching Code/ structure

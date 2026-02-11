@@ -75,7 +75,7 @@ fi
 echo "Creating softlinks..."
 
 # Define source and target directories
-SOURCE_DIR="../../edgar-crawler-Share"
+SOURCE_DIR="$HOME/Library/CloudStorage/GoogleDrive-marcozhang.w@gmail.com/My Drive/Research/edgar-crawler-Share"
 
 # Check if source directory exists
 if [ ! -d "$SOURCE_DIR" ]; then

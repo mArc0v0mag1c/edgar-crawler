@@ -10,6 +10,18 @@ from tqdm import tqdm
 from extract_items import ExtractItems
 
 
+def _normalize_nans(d):
+    """Replace float NaN values with None for stable comparison.
+
+    pandas iterrows() can convert None back to NaN, causing spurious
+    mismatches against expected JSON fixtures (where null → None).
+    """
+    for k, v in d.items():
+        if isinstance(v, float) and np.isnan(v):
+            d[k] = None
+    return d
+
+
 def extract_zip(input_zip):
     """
     Extracts the contents of a zip file to a specific folder based on its name.
@@ -103,6 +115,18 @@ class TestExtractItems(unittest.TestCase):
                     extracted_filing[current_item] == expected_filing[current_item]
                 )
 
+            # Normalize NaN → None (pandas iterrows() converts None back to NaN)
+            _normalize_nans(extracted_filing)
+
+            # Reconcile item keys added/removed after fixtures were generated
+            # (e.g., item_1C added to item_list_10k but not in old expected JSONs)
+            for key in list(extracted_filing.keys()):
+                if key.startswith("item_") and key not in expected_filing:
+                    expected_filing[key] = ""
+            for key in list(expected_filing.keys()):
+                if key.startswith("item_") and key not in extracted_filing:
+                    extracted_filing[key] = ""
+
             try:
                 self.assertEqual(extracted_filing, expected_filing)
             except Exception:
@@ -185,6 +209,17 @@ class TestExtractItems(unittest.TestCase):
             item_correct_dict["part_2"] = (
                 extracted_filing["part_2"] == expected_filing["part_2"]
             )
+
+            # Normalize NaN → None (pandas iterrows() converts None back to NaN)
+            _normalize_nans(extracted_filing)
+
+            # Reconcile item keys added/removed after fixtures were generated
+            for key in list(extracted_filing.keys()):
+                if (key.startswith("part_") and "item_" in key) and key not in expected_filing:
+                    expected_filing[key] = ""
+            for key in list(expected_filing.keys()):
+                if (key.startswith("part_") and "item_" in key) and key not in extracted_filing:
+                    extracted_filing[key] = ""
 
             try:
                 self.assertEqual(extracted_filing, expected_filing)
@@ -308,6 +343,17 @@ class TestExtractItems(unittest.TestCase):
                 item_correct_dict[current_item] = (
                     extracted_filing[current_item] == expected_filing[current_item]
                 )
+
+            # Normalize NaN → None (pandas iterrows() converts None back to NaN)
+            _normalize_nans(extracted_filing)
+
+            # Reconcile item keys added/removed after fixtures were generated
+            for key in list(extracted_filing.keys()):
+                if key.startswith("item_") and key not in expected_filing:
+                    expected_filing[key] = ""
+            for key in list(expected_filing.keys()):
+                if key.startswith("item_") and key not in extracted_filing:
+                    extracted_filing[key] = ""
 
             try:
                 self.assertEqual(extracted_filing, expected_filing)

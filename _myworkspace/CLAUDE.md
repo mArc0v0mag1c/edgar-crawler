@@ -12,7 +12,7 @@
 ## Working Directory Context
 
 You are working in the `edgar-crawler/_myworkspace/` folder, which is a research workspace inside a forked Git repository. This folder contains:
-- Git-tracked folders: `Code/`, `Figures/`, `Tables/`, `Paper/`, `Slides/`, `Plans/`
+- Git-tracked folders: `Code/`, `Figures/`, `Tables/`, `Paper/`, `Slides/`, `Reports/`, `Plans/`
 - Symlinked folders: `Data`, `Notes`, `Output` (these link to `edgar-crawler-Share/` in Google Drive)
 
 The parent folder `edgar-crawler/` contains the original forked repository codebase. Your research workspace is separate from the original code.
@@ -30,6 +30,7 @@ This project follows a two-folder structure designed for academic research on to
 - `_myworkspace/Tables/` - Final presentable results and summary statistics (version-tracked)
 - `_myworkspace/Paper/` - LaTeX documents for academic papers
 - `_myworkspace/Slides/` - LaTeX presentations
+- `_myworkspace/Reports/` - LaTeX reports (one subfolder per report, uses `\usepackage{marcoreport}`)
 - `_myworkspace/Data`, `_myworkspace/Notes`, `_myworkspace/Output` - Symlinks to edgar-crawler-Share/
 
 ### Google Drive Folder (edgar-crawler-Share/)
@@ -97,7 +98,8 @@ This project tracks progress across sessions using two files:
 1. **Session start**: Read `PROGRESS.md` for context on current phase and recent work.
 2. **New plan**: Create `Plans/YYYY-MM-DD-description.md`, update `PROGRESS.md` (set Active Plan).
 3. **During work**: Update plan log steps as completed.
-4. **Plan done** (user says "wrap up" / "commit"):
+4. **Inspection**: After generating a plan log, the user walks through each section and signals when inspection is done. Mark inspected sections with `✅` in the heading (e.g., `### B1. Run Existing Repo Tests ✅`). Once all sections are inspected, add an "Inspection Complete" status at the end of the plan log. Inspection is the last step before moving on — when reading a plan log, if there is no inspection complete status, gently remind the user they have uninspected sections.
+5. **Plan done** (user says "wrap up" / "commit"):
    - Update plan log Outcome section
    - Update `PROGRESS.md` (status → Completed, clear Active Plan)
    - Commit with detailed message:

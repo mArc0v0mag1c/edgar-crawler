@@ -46,7 +46,9 @@ Test coverage: 62 10-K (1993-2023), 184 10-Q (1993-2023), 553 8-K (1994-2023). G
 1. **Pattern 1 fix is straightforward** — just regenerate the test fixtures with the current `item_list_10k`. This should be raised as an issue/PR on the original repo. But the deeper lesson is that **the item set requires active management**: as the SEC adds or removes items (1C in 2023, 6 eliminated in 2021, 9C from HFCAA), `item_list_10k` in the code must be updated, and test fixtures must be regenerated. This is an ongoing maintenance burden, not a one-time fix.
 2. **Pattern 2 means dependency versions must be pinned for reproducibility.** Extraction results can differ slightly across environments due to HTML parsing library behavior. For any research project, lock dependencies (e.g., `pip freeze > requirements.lock`) and document the Python version used.
 
-**Action**: Open an issue on the original repo about stale test fixtures (Item 1C). See also new awareness item A5.
+**Action**: Raised PR on original repo (test fix + regenerated fixtures). See also new awareness item A5.
+
+**Test design limitation**: The test suite is a **regression test** (checks if output matches a previous code run), not a **correctness test** (checks if output matches hand-verified ground truth). Regenerating fixtures resets the baseline without validating it. If extraction has always been wrong for a particular item boundary, the test will never catch it.
 
 ### B2. Selection Bias & Missing Data / Silent Failures
 **Why**: The tool has silent failure modes (DEBUG-only logging, skipped filings) that could skew results without the user knowing.

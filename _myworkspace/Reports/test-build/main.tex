@@ -1,0 +1,67 @@
+\documentclass[oneside]{article}
+\usepackage{marcoreport}
+
+\title{Test Build}
+\author{Marco Zhang}
+\date{February 2026}
+
+\begin{document}
+\maketitle
+
+\section{Where We At}
+
+We have a consumption-savings problem with utility $u(c) = \log(c)$ and budget:
+\[
+a_{t+1} = (1+r) a_t - c_t
+\]
+
+\section{Why We Get Motivated}
+
+The value function is:
+\[
+V(a_0) = \sum_{t=0}^{\infty} \beta^t \log(c_t^*)
+\]
+But this solves only for a specific $a_0$. We want a rule for any wealth level.
+
+\section{What We Do}
+
+Separate the first term and re-index:
+\begin{align}
+V(a_0) &= \log(c_0^*) + \beta \sum_{t=1}^{\infty} \beta^{t-1} \log(c_t^*) \\
+       &= \log(c_0^*) + \beta V(a_1)
+\end{align}
+
+Define vectors $\vct{x} \in \RR^n$ and matrix $\mat{A}$. The expectation $\EE[c_t^*]$ and $\var(a_t)$ are finite. The optimal policy is:
+\[
+c_t^* = \argmax_{c} \left\{ \log(c) + \beta V((1+r)a_t - c) \right\}
+\]
+
+\begin{remarkbox}[Bellman Equation]
+This recursive structure $V(a) = \max_c \{ u(c) + \beta V(a') \}$ is the Bellman equation. It reduces an infinite-horizon problem to a single-period optimization.
+\end{remarkbox}
+
+\section{Results and Next Steps}
+
+\begin{theorem}
+Under $\beta(1+r) < 1$, the value function $V$ is concave and the policy function $c^*(a)$ is increasing in $a$.
+\end{theorem}
+
+\begin{lemma}
+The envelope condition gives $V'(a) = (1+r) u'(c^*(a))$.
+\end{lemma}
+
+\begin{definition}
+A \textbf{stationary equilibrium} is a distribution $\mu$ over wealth such that $\mu$ is invariant under the optimal policy.
+\end{definition}
+
+\begin{itemize}
+  \item Bellman equation established
+  \item Next: solve via FOC + envelope theorem
+  \item Then: characterize the stationary distribution
+\end{itemize}
+
+\begin{tcolorbox}[mynote, title=Note]
+This is a test of the mynote tcolorbox style from marcoreport.sty.
+\end{tcolorbox}
+
+\end{document}

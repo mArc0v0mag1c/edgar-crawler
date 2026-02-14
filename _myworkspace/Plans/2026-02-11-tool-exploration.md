@@ -29,11 +29,30 @@ Two concerns:
 
 **Action items for Phase 2**: (a) Build a reference table mapping each 10-K item to its active date range and regulatory source, (b) use this table downstream to filter/flag items by era, (c) pin dependencies for reproducibility.
 
+### A6. Filing Type Variants Require Explicit Listing (from B2)
+EDGAR has far more annual-report-related filing types than just `10-K`. Verified against real EDGAR Q1+Q2 2005 index (589,394 total filings): `.isin(["10-K"])` keeps only 7,726 out of 14,643 annual-report-related rows — **missing 47%**. The full variant set:
+
+| Type | Count | Description |
+|------|-------|-------------|
+| 10-K | 7,726 | Standard annual report |
+| 10KSB | 2,561 | Small business annual (no hyphen! discontinued 2009) |
+| NT 10-K | 2,040 | Late filing notification |
+| 10-K/A | 1,540 | Amended annual report |
+| 10KSB/A | 687 | Amended small business annual |
+| NTN 10K | 49 | Non-timely notification |
+| NT 10-K/A | 31 | Late filing notification for amendment |
+| 10-KT | 7 | Transition period annual |
+| 10-KT/A | 2 | Amended transition period |
+
+All 9 variants are fetchable (HTTP 200 confirmed). Must explicitly list all desired variants in `filing_types` config. Note `10KSB` has no hyphen — an easy mistake.
+
+Verified by: `Code/ToolExploration/filing_types_matching.py`
+
 ---
 
 ## Category B: Run Checks (Expected / Actual / Interpretation)
 
-### B1. Run Existing Repo Tests
+### B1. Run Existing Repo Tests ✅
 **Why**: Confirm the tool works as claimed. Understand test coverage and gaps.
 **Expected**: All tests pass. Coverage spans 1994-2023 with 62 10-K, 184 10-Q, 553 8-K filings. Gaps around 2019-2022.
 **Actual Result**: All 3 tests FAIL. Two failure patterns:
@@ -50,13 +69,7 @@ Test coverage: 62 10-K (1993-2023), 184 10-Q (1993-2023), 553 8-K (1994-2023). G
 
 **Test design limitation**: The test suite is a **regression test** (checks if output matches a previous code run), not a **correctness test** (checks if output matches hand-verified ground truth). Regenerating fixtures resets the baseline without validating it. If extraction has always been wrong for a particular item boundary, the test will never catch it.
 
-### B2. Selection Bias & Missing Data / Silent Failures
-**Why**: The tool has silent failure modes (DEBUG-only logging, skipped filings) that could skew results without the user knowing.
-**Expected**: Ticker lookup failures invisible at INFO level. `filing_types` uses exact matching — "10-K" excludes "10-K/A", "10-KSB", etc. Some test metadata may have empty Period of Report.
-**Actual Result**: In 799 test metadata rows: 0 missing Period of Report, 0 missing SIC, 0 missing State of Inc. File format: 20.9% .txt (167 files, all missing `htm_file_link`), 79.0% .htm. Only 3 filing types present: `10-K` (62), `10-Q` (184), `8-K` (553) — no variants whatsoever. Confirmed: `df.Type.isin(filing_types)` at download_filings.py:451 is exact string matching.
-**Interpretation**: The test metadata is clean — no missing fields to trigger silent skips. But this means the test suite **doesn't test any failure cases**. In real EDGAR data, missing Period of Report will cause filings to silently vanish. The 20.9% .txt rate means ~1 in 5 filings (mostly pre-2001) falls back to .txt format, which may extract differently. The exact `filing_types` matching is confirmed — must explicitly add `"10-K/A"`, `"10-KSB"`, etc. to capture variants.
-
-### B3. Item Evolution Over Time (Structural Missingness)
+### B3. Item Evolution Over Time (Structural Missingness) ✅
 **Why**: Items added/removed across decades. Must distinguish regulatory non-existence from extraction failure.
 **Expected**: Item 1C (Cybersecurity) empty pre-2023. Item 9C empty pre-~2020. Item 6 may disappear post-2021. Older items (1-8) should be consistently present.
 **Actual Result**: Analyzed 62 10-K fixture JSONs (1994-2023):
@@ -79,33 +92,47 @@ Test coverage: 62 10-K (1993-2023), 184 10-Q (1993-2023), 553 8-K (1994-2023). G
 
 Saved: `Output/ToolExploration/b3_item_evolution_10k.csv`
 
-### B4. Small Business Filer Bias (10-KSB)
-**Why**: Pre-2008 small companies filed 10-KSB. Excluded by default. Need to understand magnitude.
-**Expected**: No 10-KSB in test metadata. No special handling in extract_items.py. Prevalence in EDGAR indices unknown.
-**Actual Result**: Zero 10-KSB/10-QSB entries in test metadata. Zero references to "KSB" in extract_items.py — no special handling exists.
-**Interpretation**: Small business filings are completely untested and unhandled. The extraction regex was designed for standard 10-K item structure and would likely fail on 10-KSB's different format. For pre-2008 research involving small-cap companies, this is a blind spot. Quantifying prevalence requires checking actual EDGAR indices (future work for Phase 2).
-
-### B5. Combined Items Detection (Overcoming Empty 9A/9B)
+### B5. Combined Items Detection (Overcoming Empty 9A/9B) ✅
 **Why**: Companies sometimes combine items ("Items 9, 9A, and 9B"). Content assigned to first item only. Need post-processing strategy.
 **Expected**: Some test fixtures show item_9 with content but item_9A/9B empty. item_9 text should contain "Controls and Procedures" in those cases.
 **Actual Result**: 14 cases where item_9 has content but item_9A is empty — ALL from 1994-2002 (pre-SOX). item_9 text is short (~100-117 chars) and does NOT contain "9A" or "Controls and Procedures" references. Zero Part III combined items (10-14) detected.
 **Interpretation**: The empty 9A/9B in test fixtures are **not combined items** — they're pre-SOX filings where 9A didn't exist yet. The combined items problem (commit `a2c03d9`) is real but not represented in the curated test fixtures. Detection heuristic (check if item_9 contains "Controls and Procedures" keywords) would work for post-2004 cases but needs real-world data to validate. Test fixtures don't cover this edge case.
 
-### B6. 10-Q Time-Series Consistency (Part-Level vs Item-Level)
+### B2. Selection Bias & Missing Data / Silent Failures ✅
+**Why**: The tool has silent failure modes (DEBUG-only logging, skipped filings) that could skew results without the user knowing.
+**Expected**: Ticker lookup failures invisible at INFO level. `filing_types` uses exact matching — "10-K" excludes "10-K/A", "10-KSB", etc. Some test metadata may have empty Period of Report.
+**Actual Result**: In 799 test metadata rows: 0 missing Period of Report, 0 missing SIC, 0 missing State of Inc. File format: 20.9% .txt (167 files, all missing `htm_file_link`), 79.0% .htm. Only 3 filing types present: `10-K` (62), `10-Q` (184), `8-K` (553) — no variants whatsoever. Confirmed: `df.Type.isin(filing_types)` at download_filings.py:451 is exact string matching.
+
+**Verification**: Fetched real EDGAR index for Q1+Q2 2005 and confirmed `.isin(["10-K"])` misses 47% of annual-report-related filings (6,917 out of 14,643). Nine distinct variants exist, all accessible (HTTP 200). Critically, EDGAR uses `10KSB` (no hyphen), not `10-KSB`. See A6 for full variant table.
+
+**Interpretation**: The test metadata is clean — no missing fields to trigger silent skips. But this means the test suite **doesn't test any failure cases**. In real EDGAR data, missing Period of Report will cause filings to silently vanish. The 20.9% .txt rate means ~1 in 5 filings (mostly pre-2001) falls back to .txt format, which may extract differently. The exact `filing_types` matching is confirmed — must explicitly list all desired variants. See new awareness item A6.
+
+Verified by: `Code/ToolExploration/filing_types_matching.py`
+
+### B4. Small Business Filer Bias (10-KSB) ✅
+**Why**: Pre-2008 small companies filed 10-KSB. Excluded by default. Need to understand magnitude.
+**Expected**: No 10-KSB in test metadata. No special handling in extract_items.py. Prevalence in EDGAR indices unknown.
+**Actual Result**: Zero 10-KSB/10-QSB entries in test metadata. Zero references to "KSB" in extract_items.py — no special handling exists.
+**Interpretation**: Small business filings are completely untested and unhandled. The extraction regex was designed for standard 10-K item structure and would likely fail on 10-KSB's different format. For pre-2008 research involving small-cap companies, this is a blind spot. Quantifying prevalence requires checking actual EDGAR indices (future work for Phase 2).
+
+### B6. 10-Q Time-Series Consistency (Part-Level vs Item-Level) ✅
 **Why**: README admits older 10-Q filings may only extract at part-level. Need to confirm and find cutoff.
 **Expected**: Pre-~2003 10-Q filings have part_1/part_2 blobs but empty part_1_item_* keys. This makes consistent MD&A (Item 2) comparison across 1996-2024 impossible.
-**Actual Result**: Initial script reported "100% item-level extraction" — but this was a **classification bug**: the script used `any()` to check if ANY item key had content, which was satisfied by Part 2 items even when Part 1 items all failed. Deeper analysis found **6 out of 200 (3%) 10-Q fixtures have Part 1 item-level extraction failure**, all from 1993-1995 (Zurn Industries, Zions Cooperative Mercantile Institution). Pattern: `part_1` blob has 6K-14K chars of content, but `part_1_item_1` through `part_1_item_4` are all empty. Part 2 items extract correctly in all cases. No filings have both Part 1 AND Part 2 item-level failures.
-**Interpretation**: The test fixtures are curated, but even within this curated set, 3% of old .txt-format 10-Q filings fail at Part 1 item extraction. This is because old 10-Q filings (pre-~1996) often omit "ITEM 1", "ITEM 2" headers within Part I, going straight from "PART I - FINANCIAL INFORMATION" into the financial statements and MD&A without explicit item numbering. In the real-world EDGAR population (uncurated), the failure rate for old 10-Q Part 1 extraction is likely **much higher**. For research: Part 1 item-level data (financial statements, MD&A) from pre-~2000 10-Q filings should be treated as unreliable. Fall back to the `part_1` blob for these cases.
+**Actual Result**: The tool extracts 10-Q at two levels: the **whole part blob** (`part_1`, `part_2`) and **individual items within each part** (`part_1_item_1`, `part_1_item_2`, etc.). For 6 out of 200 (3%) fixtures — all from 1993-1995 (Zurn Industries, Zions Cooperative Mercantile Institution) — the tool successfully grabs the entire Part 1 text (6K-14K chars of real content in `part_1`), but when it tries to split that blob into individual items, it gets nothing: `part_1_item_1` through `part_1_item_4` are all empty strings. Part 2 items extract correctly in all cases.
+
+Note: our initial analysis script reported "100% item-level extraction" — this was a **classification bug**. The script used `any()` to check if ANY item had content, which returned True because Part 2 items always worked, masking the Part 1 failure.
+
+**Interpretation**: The tool finds individual items by searching for headers like "ITEM 1", "ITEM 2" inside the part text. Old .txt filings (pre-~1996) don't have those headers — they go straight from "PART I - FINANCIAL INFORMATION" into the content without labeling each item, so the regex finds nothing. In the real-world EDGAR population (uncurated), the failure rate is likely much higher than 3%. If you need item-level 10-Q data (e.g., specifically MD&A = Part 1 Item 2) from pre-~2000 filings, you can't rely on the individual item keys — fall back to the `part_1` blob and parse it yourself.
 
 Saved: `Output/ToolExploration/b6_tenq_extraction_type.csv`
 
-### B7. Amendments & Transition Reports (10-K/A, 10-Q/A, 10-KT, 10-QT)
+### B7. Amendments & Transition Reports (10-K/A, 10-Q/A, 10-KT, 10-QT) ✅
 **Why**: Excluded by default. Need to understand prevalence and extraction compatibility.
 **Expected**: No amendments/transitions in test metadata. Prevalence in EDGAR indices is non-trivial (amendments especially).
 **Actual Result**: Zero amendments (10-K/A, 10-Q/A), zero transition reports (10-KT, 10-QT), zero late filing notifications (NT) in test metadata. Only the three base types are tested.
 **Interpretation**: The tool has never been tested on amendments or transitions. Since amendments share the same item structure as originals, the extraction regex should work — but this is unverified. For research: (a) decide upfront whether to include amendments, (b) if included, add `"10-K/A"`, `"10-Q/A"` to `filing_types`, (c) de-duplicate by CIK + period_of_report keeping latest filing_date. Prevalence quantification deferred to Phase 2.
 
-### B8. Spot-Check Samples
+### B8. Spot-Check Samples ✅
 **Why**: Manual verification against SEC originals is the gold standard.
 **Expected**: Modern filings (post-2010) should extract cleanly. Pre-2000 .txt filings may show misalignment or missing content.
 **Actual Result**: Examined 5 filings across eras from test fixture expected JSONs:
@@ -145,7 +172,7 @@ Also checked Microsoft 2024 10-Q (modern): Part 1 = 4 items extracted (item_1: 6
 
 **High Impact (affects research design):**
 1. **10-Q Part 1 item extraction fails on old .txt filings** (B6, B8). Pre-~2000 10-Q filings often lack explicit item headers within Part I. The `part_1` blob captures content but is unsegmented. For longitudinal 10-Q research, either: (a) start from ~2000+, or (b) use `part_1` blob with custom parsing for older filings.
-2. **Filing type exact matching excludes variants** (B2, B4, B7). Config `filing_types: ["10-K"]` does NOT capture 10-K/A, 10-KSB, 10-KT. Must explicitly list all desired variants. 10-KSB (pre-2008 small business filers) has zero extraction support.
+2. **Filing type exact matching excludes variants** (A6, B2, B4, B7). Config `filing_types: ["10-K"]` misses 47% of annual-report-related filings (verified against real EDGAR index). Nine variants exist including `10KSB` (no hyphen!), `10-K/A`, `NT 10-K`, `10-KT`. Must explicitly list all desired variants. 10-KSB (pre-2008 small business filers) has zero extraction support.
 3. **Item structural breaks across decades** (B3). Three eras: Pre-SOX (1994-2003, no 1A/9A), Post-SOX (2004-2022, standard set), Modern (2023+, 1C added, 6 eliminated). Must not confuse regulatory non-existence with extraction failure.
 
 **Medium-High Impact (ongoing maintenance):**
@@ -170,6 +197,7 @@ Also checked Microsoft 2024 10-Q (modern): Part 1 = 4 items extracted (item_1: 6
 | Silent failures script | `Code/ToolExploration/silent_failures.py` |
 | Item evolution matrix (10-K) | `Output/ToolExploration/b3_item_evolution_10k.csv` |
 | 10-Q extraction type by year | `Output/ToolExploration/b6_tenq_extraction_type.csv` |
+| Filing type matching verification | `Code/ToolExploration/filing_types_matching.py` |
 
 ### Next Steps (Phase 2, Future)
 - **Open issue on original repo** about stale test fixtures (Item 1C not in expected JSONs)
@@ -178,3 +206,7 @@ Also checked Microsoft 2024 10-Q (modern): Part 1 = 4 items extracted (item_1: 6
 - Test extraction on real-world old 10-Q filings (not curated fixtures) to measure true Part 1 failure rate
 - Decide per-project: which filing variants to include, table removal setting, time range
 - Build post-processing pipeline for combined items detection
+
+---
+
+**Inspection Complete** ✅

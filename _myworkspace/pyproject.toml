@@ -21,6 +21,7 @@ dependencies = [
     "pypdf>=6.7.0",
     "python-dotenv>=1.2.1",
     "reportlab>=4.4.9",
+    "wrds>=3.1.6",
     "zotero-mcp>=0.1.2",
 ]
 

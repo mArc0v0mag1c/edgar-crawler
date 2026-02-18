@@ -15,8 +15,8 @@
 - [x] Step A5: FY-aligned comparison using Compustat funda + EDGAR wide window
 - [x] Step A6: Verify remaining misses via SEC submissions API (period_of_report)
 - [x] Step A7: Fix crosswalk — rerun comparison with time-varying CIK from comp.funda
-- [ ] Step A8: Robustness — fetch period_of_report for all EDGAR 10-K filings via SEC API (running)
-- [x] Step A9: Re-do coverage comparison with WRDS wciklink_gvkey historical crosswalk
+- [x] Step A8: Re-do coverage comparison with WRDS wciklink_gvkey historical crosswalk
+- [ ] Step A9: Robustness — fetch period_of_report for all EDGAR 10-K filings via SEC API
 
 ## Part B: Item-Level Extraction
 
@@ -168,14 +168,9 @@ Hoberg-Phillips used the **WRDS `WCIKLINK_GVKEY` table** (SEC Analytics Suite), 
 
 Notably, gvkey `001678` (Apache Corp) is one of our 231 "missing" TNIC firms — Compustat maps it to CIK 0001841666 (post-restructuring entity), but its actual EDGAR CIK is 0000006769.
 
-**Conclusion**: The ~5% gap (231 firms) is a **crosswalk gap** — firms whose historical CIK is only recoverable via the WRDS SEC link table, not from Compustat's native CIK. The 15% mismatch rate in the 74-firm sample confirms this is a systematic issue. This does not reflect a coverage limitation of edgar-crawler (the 10-Ks exist in EDGAR under the correct historical CIK), but rather our inability to replicate Hoberg-Phillips's proprietary crosswalk. **Step A9 confirmed this**: using the raw wciklink crosswalk (all CIK-gvkey pairs) gives **99.8% coverage** — the gap was almost entirely a crosswalk problem.
+**Conclusion**: The ~5% gap (231 firms) is a **crosswalk gap** — firms whose historical CIK is only recoverable via the WRDS SEC link table, not from Compustat's native CIK. The 15% mismatch rate in the 74-firm sample confirms this is a systematic issue. This does not reflect a coverage limitation of edgar-crawler (the 10-Ks exist in EDGAR under the correct historical CIK), but rather our inability to replicate Hoberg-Phillips's proprietary crosswalk. **Step A8 confirmed this**: using the raw wciklink crosswalk (all CIK-gvkey pairs) gives **99.8% coverage** — the gap was almost entirely a crosswalk problem.
 
-### Step A8: Robustness — period_of_report via SEC API (running)
-**Why**: Steps A4-A7 match TNIC to EDGAR using CIK set intersection over a wide filing-date window. A cleaner approach is to fetch `period_of_report` (= `reportDate` in SEC API) for every EDGAR 10-K filing and match on exact fiscal period instead of filing date. This also tests the `reportDate` variable we'll need for future work (FY-aligned extraction).
-**Approach**: Separate script (`compare_coverage_robustness.py`). Fetches EDGAR full-index for 2005-2006 (8 quarters), then queries `data.sec.gov/submissions/CIK{cik}.json` for all 14,962 unique CIKs to extract `reportDate` for 10-K forms. Matches to TNIC using CIK + reportDate year = 2005.
-**Status**: Running — SEC API fetch in progress (~14,962 CIKs at ~9 req/sec).
-
-### Step A9: Coverage with WRDS wciklink_gvkey Historical Crosswalk
+### Step A8: Coverage with WRDS wciklink_gvkey Historical Crosswalk
 **Why**: Steps A3-A7 used Compustat's native CIK (`comp.company` / `comp.funda`), which only stores current/successor CIKs. Hoberg-Phillips used WRDS `WCIKLINK_GVKEY` (SEC Analytics Suite), which preserves historical CIK-gvkey links from 4 sources (Compustat Company, CUSIP matching from 13D/G, Capital IQ, CCM). Professor Ma provided the full table.
 **Expected**: wciklink should recover many of the ~363 gvkeys that Compustat couldn't map to an EDGAR CIK, closing the crosswalk gap.
 
@@ -222,8 +217,8 @@ Initially used the expanded file filtered to `year=2005`, which gave 94.9% cover
 | A5 | comp.company, wide window | 4,761 (93.0%) | 130 |
 | A7 | comp.funda, wide window | 4,735 (92.4%) | 156 |
 | | (comp.fundq = same, 0 diff) | | |
-| A9 (expanded, year=2005) | wciklink expanded | 4,860 (94.9%) | 96 |
-| **A9 (raw, all pairs)** | **wciklink raw** | **5,112 (99.8%)** | **1** |
+| A8 (expanded, year=2005) | wciklink expanded | 4,860 (94.9%) | 96 |
+| **A8 (raw, all pairs)** | **wciklink raw** | **5,112 (99.8%)** | **1** |
 
 **Recovery analysis**: Of the 363 gvkeys previously missing under the Compustat crosswalk:
 - **353 recovered** — wciklink provided historical CIKs that ARE in EDGAR
@@ -249,6 +244,30 @@ All 9 have legitimate reasons for absence — **none are edgar-crawler coverage 
 Three categories: (1) **Late filers** (4 firms) — filed 10-K years after deadline, outside 2005-2006 window; (2) **Foreign issuer** (1 firm) — AXA S.A. uses 6-K exemption; (3) **Spinoffs/new entities** (4 firms) — CIK didn't exist or wasn't filing in 2005. The EDGAR index already includes all 10-K variants (10-K, 10-K/A, 10KSB, 10KSB/A, 10-KT, 10-KT/A) — the absence is not due to missing form types.
 
 **Interpretation**: The raw wciklink crosswalk resolves virtually the entire gap. The previous ~7% "missing" rate was almost entirely a crosswalk problem — Compustat's native CIK only has current links, and even the expanded wciklink file has a backfilling issue (successor CIKs overwrite historical ones). Using the raw file with all CIK-gvkey pairs gives **99.8% coverage** — only 10 gvkeys out of 5,122 are genuinely absent from EDGAR, all for structurally legitimate reasons (late filers, foreign issuers, spinoffs).
+
+### Step A9: Robustness — period_of_report via SEC API
+**Why**: Steps A4-A8 match TNIC to EDGAR using CIK set intersection over a wide filing-date window (2005Q1-2006Q3). This is approximate — a 10-K filed in 2006Q2 might be for FY2005 or FY2006. A cleaner approach is to fetch `period_of_report` (= `reportDate` in SEC API) for every EDGAR 10-K filing and match on exact fiscal period instead of filing date.
+**Approach**: Separate script (`compare_coverage_robustness.py`). Fetches EDGAR full-index for 2005-2006 (8 quarters), then queries `data.sec.gov/submissions/CIK{cik}.json` for all 14,962 unique CIKs to extract `reportDate` for 10-K forms. Matches to TNIC using CIK + reportDate year = 2005.
+
+**Actual Result (preliminary — pagination limitation)**:
+
+| Metric | Value |
+|--------|-------|
+| EDGAR CIKs queried | 14,958 |
+| CIKs with reportDate data | 14,958 |
+| CIKs with FY2005 reportDate | 10,089 |
+| TNIC CIKs (wciklink raw) | 5,121 |
+| **Overlap** (TNIC ∩ EDGAR FY2005) | **3,018 (58.9%)** |
+
+**Problem**: The SEC API `filings.recent` array only holds the ~1,000 most recent filings per CIK. For FY2005 data (20 years old), 1,974 of 4,992 TNIC CIKs have their 10-K pushed beyond the `recent` cutoff into paginated `filings.files[]` arrays. The script did not follow pagination, so the 58.9% overlap is artificially low.
+
+**Resolution needed**: Two options to get complete `period_of_report`:
+- **Option A**: Follow SEC API pagination (`filings.files[]` → `CIK{cik}-submissions-001.json`, etc.) — ~20 min runtime
+- **Option B**: Fetch `CONFORMED PERIOD OF REPORT` directly from each filing's SGML header — ~52 min runtime
+
+Both options will be implemented and compared. Results pending.
+
+**Status**: Preliminary results recorded. Full period_of_report fetch in progress (Options A & B).
 
 ## Results — Part B: Item-Level Extraction
 
@@ -383,13 +402,15 @@ Key: requires `\n` at start (item must be on its own line) and tries case-sensit
 | Coverage summary (Step 4) | `Output/CoverageValidation/coverage_summary.csv` |
 | Corrected summary (Step 7) | `Output/CoverageValidation/coverage_summary_corrected.csv` |
 | SEC API recovered filings | `Output/CoverageValidation/recovered_via_api.csv` |
-| Robustness script (A8) | `Code/CoverageValidation/compare_coverage_robustness.py` |
-| wciklink comparison (A9) | `Code/CoverageValidation/compare_coverage_wciklink.py` |
+| wciklink comparison (A8) | `Code/CoverageValidation/compare_coverage_wciklink.py` |
+| Robustness script (A9) | `Code/CoverageValidation/compare_coverage_robustness.py` |
 | EDGAR 2005-2006 10-K index | `Output/CoverageValidation/edgar_2005_2006_10k.csv` |
 | wciklink crosswalk (raw) | `Data/CoverageValidation/wciklink_gvkey.csv` |
 | wciklink crosswalk (expanded) | `Data/CoverageValidation/wciklink_gvkey_year_expanded_clean.csv` |
 | wciklink coverage summary | `Output/CoverageValidation/coverage_summary_wciklink.csv` |
 | wciklink recovered firms | `Output/CoverageValidation/wciklink_recovered_firms.csv` |
+| SEC API report dates (A9) | `Output/CoverageValidation/edgar_10k_report_dates.csv` |
+| Robustness coverage summary (A9) | `Output/CoverageValidation/coverage_summary_robustness.csv` |
 | H-P replication exercise | `/tmp/hp_code/code/` (extracted from [zip](https://hobergphillips.tuck.dartmouth.edu/computational_linguistics_exercise.zip)) |
 
 ---
@@ -426,8 +447,8 @@ Key: requires `\n` at start (item must be on its own line) and tries case-sensit
 **Root cause progression**:
 - Steps A4-A7: Compustat's native CIK is backfilled (company = funda = fundq), missing historical links → ~7-10% gap
 - Step A7: Discovered H-P used WRDS `WCIKLINK_GVKEY` (SEC Analytics Suite) with 4 sources
-- Step A9 (expanded): wciklink's year-expanded file still backfills successor CIKs into historical years → 94.9%
-- Step A9 (raw): Using raw wciklink with ALL CIK-gvkey pairs (no year filter) → **99.8%**
+- Step A8 (expanded): wciklink's year-expanded file still backfills successor CIKs into historical years → 94.9%
+- Step A8 (raw): Using raw wciklink with ALL CIK-gvkey pairs (no year filter) → **99.8%**
 - The ~7% gap was **almost entirely a crosswalk problem**, not a coverage problem
 
 **edgar-crawler's EDGAR source covers 99.8% of the Hoberg-Phillips TNIC universe** when the correct crosswalk is used. The remaining 10 gvkeys (0.2%) are genuinely absent from EDGAR.

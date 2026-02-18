@@ -483,6 +483,17 @@ For the 33 filings with Jaccard ≥ 0.70 (MATCH + BOUNDARY_DIFF), the mean Jacca
 - edgar-crawler excludes the trailing header (its regex stops before the next item)
 - Table removal: edgar-crawler removes numerical tables, H-P keeps them (minor word count impact)
 
+**5. Year distribution confirms the pattern is era-driven**
+
+| Era | MATCH | BOUNDARY_DIFF | MAJOR_DIFF | EC_ONLY | Total |
+|-----|-------|---------------|------------|---------|-------|
+| 1993-1999 | 0 | 0 | 0 | 14 | 14 |
+| 2000-2004 | 1 | 0 | 0 | 9 | 10 |
+| 2005-2010 | 3 | 5 | 1 | 3 | 12 |
+| 2011-2023 | 12 | 12 | 1 | 1 | 26 |
+
+Pre-2005: H-P extracts almost nothing (23/24 EC_ONLY) — no Item 1A boundary available. 2005-2010: transition period, H-P starts working. 2011-2023: both work on 24/26 filings (92%); BOUNDARY_DIFFs are consistently ToC pollution (Disney, Tyson, Worthington, NetApp). The 2005 cutoff aligns with SEC's mandatory Item 1A (Risk Factors) requirement.
+
 **Interpretation**: The B2 code review predictions were confirmed:
 1. **edgar-crawler is strictly more capable** — it extracts Item 1 from 100% of filings vs H-P's 56.5%. The 44% gap is mostly pre-2005 filings lacking Item 1A boundaries.
 2. **For modern filings, both produce very similar text** (mean Jaccard 0.946). The practical impact on downstream NLP (e.g., TNIC similarity scores) would be minimal.

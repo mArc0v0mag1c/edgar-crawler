@@ -16,7 +16,7 @@
 - [x] Step A6: Verify remaining misses via SEC submissions API (period_of_report)
 - [x] Step A7: Fix crosswalk — rerun comparison with time-varying CIK from comp.funda
 - [x] Step A8: Re-do coverage comparison with WRDS wciklink_gvkey historical crosswalk
-- [ ] Step A9: Robustness — fetch period_of_report for all EDGAR 10-K filings via SEC API
+- [x] Step A9: Robustness — fetch period_of_report for all EDGAR 10-K filings (two methods)
 
 ## Part B: Item-Level Extraction
 
@@ -246,28 +246,56 @@ Three categories: (1) **Late filers** (4 firms) — filed 10-K years after deadl
 **Interpretation**: The raw wciklink crosswalk resolves virtually the entire gap. The previous ~7% "missing" rate was almost entirely a crosswalk problem — Compustat's native CIK only has current links, and even the expanded wciklink file has a backfilling issue (successor CIKs overwrite historical ones). Using the raw file with all CIK-gvkey pairs gives **99.8% coverage** — only 10 gvkeys out of 5,122 are genuinely absent from EDGAR, all for structurally legitimate reasons (late filers, foreign issuers, spinoffs).
 
 ### Step A9: Robustness — period_of_report via SEC API
-**Why**: Steps A4-A8 match TNIC to EDGAR using CIK set intersection over a wide filing-date window (2005Q1-2006Q3). This is approximate — a 10-K filed in 2006Q2 might be for FY2005 or FY2006. A cleaner approach is to fetch `period_of_report` (= `reportDate` in SEC API) for every EDGAR 10-K filing and match on exact fiscal period instead of filing date.
-**Approach**: Separate script (`compare_coverage_robustness.py`). Fetches EDGAR full-index for 2005-2006 (8 quarters), then queries `data.sec.gov/submissions/CIK{cik}.json` for all 14,962 unique CIKs to extract `reportDate` for 10-K forms. Matches to TNIC using CIK + reportDate year = 2005.
+**Why**: Steps A4-A8 match TNIC to EDGAR using CIK set intersection over a wide filing-date window (2005Q1-2006Q3). This is approximate — a 10-K filed in 2006Q2 might be for FY2005 or FY2006. A cleaner approach is to fetch `period_of_report` (= `reportDate`) for every EDGAR 10-K filing and match on exact fiscal period instead of filing date.
 
-**Actual Result (preliminary — pagination limitation)**:
+**Approach**: Two independent methods to obtain `period_of_report`:
+- **Option A** (`fetch_report_dates_api.py`): Query SEC submissions API (`data.sec.gov/submissions/CIK{cik}.json`) for all 14,962 unique CIKs, **with full pagination** (following `filings.files[]` for CIKs with >1000 filings). Extracts `reportDate` from all 10-K forms.
+- **Option B** (`fetch_report_dates_headers.py`): Fetch `CONFORMED PERIOD OF REPORT` directly from each filing's SGML header (`https://www.sec.gov/Archives/{filename}`, first 4KB via Range header) for all 31,213 filings in the 2005-2006 index.
+
+**Initial attempt (no pagination)** gave only 58.9% overlap due to the SEC API `filings.recent` array only holding ~1,000 most recent filings per CIK — FY2005 data is 20 years old, pushing many filings beyond the cutoff.
+
+**Actual Result (with pagination / filing headers)**:
+
+| Method | FY2005 CIKs | TNIC Covered | Rate |
+|--------|-------------|-------------|------|
+| Option A (API + pagination) | 12,038 | 5,084 | **99.3%** |
+| Option B (filing headers) | 11,941 | 5,073 | **99.0%** |
+
+**Cross-validation**: The two methods agree on 11,940 out of 12,038 FY2005 CIKs (99.2%). The 98 CIKs found only by Option A are FY2005 filings filed outside the 2005-2006 index window (the API sees all filing dates; Option B only queries filings in the index). Only 1 CIK appears in B but not A.
+
+**Detail** (Option A):
 
 | Metric | Value |
 |--------|-------|
-| EDGAR CIKs queried | 14,958 |
-| CIKs with reportDate data | 14,958 |
-| CIKs with FY2005 reportDate | 10,089 |
-| TNIC CIKs (wciklink raw) | 5,121 |
-| **Overlap** (TNIC ∩ EDGAR FY2005) | **3,018 (58.9%)** |
+| EDGAR CIKs queried (all 2005-2006) | 14,962 |
+| Total 10-K records (all years) | 199,620 |
+| FY2005 10-K filings | 15,024 |
+| FY2005 CIKs | 12,038 |
+| API errors | 2 |
 
-**Problem**: The SEC API `filings.recent` array only holds the ~1,000 most recent filings per CIK. For FY2005 data (20 years old), 1,974 of 4,992 TNIC CIKs have their 10-K pushed beyond the `recent` cutoff into paginated `filings.files[]` arrays. The script did not follow pagination, so the 58.9% overlap is artificially low.
+FY2005 filing type breakdown (Option A): 10-K: 9,003 | 10KSB: 3,223 | 10-K/A: 1,517 | 10KSB/A: 1,262 | 10-KT: 14 | 10-KT/A: 5
 
-**Resolution needed**: Two options to get complete `period_of_report`:
-- **Option A**: Follow SEC API pagination (`filings.files[]` → `CIK{cik}-submissions-001.json`, etc.) — ~20 min runtime
-- **Option B**: Fetch `CONFORMED PERIOD OF REPORT` directly from each filing's SGML header — ~52 min runtime
+**Detail** (Option B):
 
-Both options will be implemented and compared. Results pending.
+| Metric | Value |
+|--------|-------|
+| EDGAR filings fetched | 31,213 |
+| reportDate extracted | 30,991 (99.3%) |
+| reportDate missing | 222 |
+| FY2005 filings | 14,544 |
+| FY2005 CIKs | 11,941 |
 
-**Status**: Preliminary results recorded. Full period_of_report fetch in progress (Options A & B).
+**Unified comparison** (all on 5,122 TNIC gvkeys):
+
+| Step | Method | Covered | Rate |
+|------|--------|---------|------|
+| A8 | wciklink raw, wide window (CIK overlap) | 5,112 | **99.8%** |
+| A9 Option A | SEC API + pagination (exact reportDate) | 5,084 | **99.3%** |
+| A9 Option B | Filing headers (exact reportDate) | 5,073 | **99.0%** |
+
+The 0.5-0.8% drop from A8 to A9 is expected: A8 counts any CIK appearing anywhere in the 2005-2006 index (regardless of fiscal year), while A9 requires the filing's fiscal period to be exactly 2005. The ~28-39 firms lost are those whose FY doesn't end in calendar year 2005 but whose 10-K was filed within the 2005-2006 window.
+
+**Interpretation**: Using the stricter `period_of_report` matching, **99.0-99.3%** of TNIC firms are covered. This confirms that the wide-window heuristic (Step A8: 99.8%) was already a very good approximation. The period_of_report data is also a valuable artifact for future work (FY-aligned extraction).
 
 ## Results — Part B: Item-Level Extraction
 
@@ -403,14 +431,19 @@ Key: requires `\n` at start (item must be on its own line) and tries case-sensit
 | Corrected summary (Step 7) | `Output/CoverageValidation/coverage_summary_corrected.csv` |
 | SEC API recovered filings | `Output/CoverageValidation/recovered_via_api.csv` |
 | wciklink comparison (A8) | `Code/CoverageValidation/compare_coverage_wciklink.py` |
-| Robustness script (A9) | `Code/CoverageValidation/compare_coverage_robustness.py` |
+| Robustness script — initial (A9) | `Code/CoverageValidation/compare_coverage_robustness.py` |
 | EDGAR 2005-2006 10-K index | `Output/CoverageValidation/edgar_2005_2006_10k.csv` |
 | wciklink crosswalk (raw) | `Data/CoverageValidation/wciklink_gvkey.csv` |
 | wciklink crosswalk (expanded) | `Data/CoverageValidation/wciklink_gvkey_year_expanded_clean.csv` |
 | wciklink coverage summary | `Output/CoverageValidation/coverage_summary_wciklink.csv` |
 | wciklink recovered firms | `Output/CoverageValidation/wciklink_recovered_firms.csv` |
-| SEC API report dates (A9) | `Output/CoverageValidation/edgar_10k_report_dates.csv` |
-| Robustness coverage summary (A9) | `Output/CoverageValidation/coverage_summary_robustness.csv` |
+| A9 Option A script (API pagination) | `Code/CoverageValidation/fetch_report_dates_api.py` |
+| A9 Option B script (filing headers) | `Code/CoverageValidation/fetch_report_dates_headers.py` |
+| A9 reportDates — API paginated | `Output/CoverageValidation/edgar_10k_report_dates_paginated.csv` |
+| A9 reportDates — filing headers | `Output/CoverageValidation/edgar_10k_report_dates_headers.csv` |
+| A9 coverage summary (Option A) | `Output/CoverageValidation/coverage_summary_option_a.csv` |
+| A9 coverage summary (Option B) | `Output/CoverageValidation/coverage_summary_option_b.csv` |
+| A9 reportDates — initial (no pagination) | `Output/CoverageValidation/edgar_10k_report_dates.csv` |
 | H-P replication exercise | `/tmp/hp_code/code/` (extracted from [zip](https://hobergphillips.tuck.dartmouth.edu/computational_linguistics_exercise.zip)) |
 
 ---
@@ -429,29 +462,33 @@ Key: requires `\n` at start (item must be on its own line) and tries case-sensit
 
 **Coverage overlap** (all on 5,122 TNIC gvkeys):
 
-| Crosswalk | Covered | Rate | No crosswalk |
-|-----------|---------|------|--------------|
-| comp.company (2005 only) | 4,624 | 90.3% | 130 |
-| comp.company (wide window) | 4,761 | 93.0% | 130 |
-| comp.funda (wide window) | 4,735 | 92.4% | 156 |
-| comp.fundq (= same as funda) | — | — | — |
-| wciklink (expanded, year=2005) | 4,860 | 94.9% | 96 |
-| **wciklink (raw, all pairs)** | **5,112** | **99.8%** | **1** |
+| Step | Crosswalk / Method | Covered | Rate | No crosswalk |
+|------|-------------------|---------|------|--------------|
+| A4 | comp.company (2005 only) | 4,624 | 90.3% | 130 |
+| A5 | comp.company (wide window) | 4,761 | 93.0% | 130 |
+| A7 | comp.funda (wide window) | 4,735 | 92.4% | 156 |
+| | comp.fundq (= same as funda) | — | — | — |
+| A8 | wciklink (expanded, year=2005) | 4,860 | 94.9% | 96 |
+| **A8** | **wciklink (raw, all pairs)** | **5,112** | **99.8%** | **1** |
+| A9 | reportDate match (API pagination) | 5,084 | 99.3% | 1 |
+| A9 | reportDate match (filing headers) | 5,073 | 99.0% | 1 |
 
-**Remaining gap** (10 gvkeys / 0.2%) — all structurally explained:
+**Remaining gap** (10 gvkeys / 0.2% under A8; 37-48 under A9) — all structurally explained:
 - 4 **late filers** — 10-K for FY2005 filed years late (2007-2008), outside the 2005-2006 index window
 - 4 **spinoffs/new entities** — CIK didn't exist or wasn't filing in 2005
 - 1 **foreign private issuer** — AXA S.A. files 6-K only, never files 10-K
 - 1 gvkey has no wciklink entry at all
+- A9's additional ~28 uncovered firms (vs A8) are firms whose fiscal year doesn't end in calendar 2005 but whose 10-K was filed within the 2005-2006 index window
 
 **Root cause progression**:
 - Steps A4-A7: Compustat's native CIK is backfilled (company = funda = fundq), missing historical links → ~7-10% gap
 - Step A7: Discovered H-P used WRDS `WCIKLINK_GVKEY` (SEC Analytics Suite) with 4 sources
 - Step A8 (expanded): wciklink's year-expanded file still backfills successor CIKs into historical years → 94.9%
 - Step A8 (raw): Using raw wciklink with ALL CIK-gvkey pairs (no year filter) → **99.8%**
+- Step A9: Exact fiscal-year matching via reportDate → **99.0-99.3%** (two independent methods cross-validate)
 - The ~7% gap was **almost entirely a crosswalk problem**, not a coverage problem
 
-**edgar-crawler's EDGAR source covers 99.8% of the Hoberg-Phillips TNIC universe** when the correct crosswalk is used. The remaining 10 gvkeys (0.2%) are genuinely absent from EDGAR.
+**edgar-crawler's EDGAR source covers 99.0-99.8% of the Hoberg-Phillips TNIC universe** depending on matching method. The remaining 10-48 gvkeys (0.2-0.9%) are genuinely absent from EDGAR or have non-2005 fiscal years.
 
 ### Part B conclusion: Item-level extraction — in progress
 

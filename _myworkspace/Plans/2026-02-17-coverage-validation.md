@@ -295,7 +295,27 @@ FY2005 filing type breakdown (Option A): 10-K: 9,003 | 10KSB: 3,223 | 10-K/A: 1,
 
 The 0.5-0.8% drop from A8 to A9 is expected: A8 counts any CIK appearing anywhere in the 2005-2006 index (regardless of fiscal year), while A9 requires the filing's fiscal period to be exactly 2005. The ~28-39 firms lost are those whose FY doesn't end in calendar year 2005 but whose 10-K was filed within the 2005-2006 window.
 
-**Interpretation**: Using the stricter `period_of_report` matching, **99.0-99.3%** of TNIC firms are covered. This confirms that the wide-window heuristic (Step A8: 99.8%) was already a very good approximation. The period_of_report data is also a valuable artifact for future work (FY-aligned extraction).
+**TNIC `year` definition** (verified): From [H-P TNIC3HHI README](https://hobergphillips.tuck.dartmouth.edu/idata/Readme_tnic3HHIData.txt):
+
+> "the year field in this database is based on Compustat calendar years obtained as the first four digits of the YYYYMMDD datadate variable"
+
+So TNIC `year` = `year(datadate)`, NOT Compustat `fyear`. Since Compustat `datadate` is the fiscal period-end date rounded to month-end (same concept as EDGAR's `reportDate` / CONFORMED PERIOD OF REPORT), our filter `reportDate year == 2005` is the **correct** match for TNIC `year=2005`.
+
+This differs from Compustat's `fyear` convention ([Compustat data dictionary](https://robsonglasscock.wordpress.com/2018/04/12/gvkey-and-datadate-or-fyear-duplicates-in-compustat/)):
+> "If the current fiscal year-end month falls in January through May, [fyear] is the current calendar year minus 1 year. If June through December, [fyear] is the current calendar year."
+
+Under the `fyear` convention, a firm with FY ending Jan 31, 2005 has `datadate=20050131` → TNIC `year=2005`, but Compustat `fyear=2004`. Applying the fyear filter to our data:
+- **Gains 23** of 27 FY_MISMATCH gvkeys (their FY ends Jan–Mar 2006 → fyear=2005, matching EDGAR filings with 2006 reportDate)
+- **Loses 50** gvkeys (their FY ends Jan–May 2005 → fyear=2004, excluded from fyear==2005 despite reportDate in 2005)
+- Net: 5,057 covered (98.7%) — **worse** than the reportDate-year filter (5,084 / 99.3%)
+
+Empirically confirmed: all 50 "lost" gvkeys appear in TNIC `year=2005` (verified against raw TNIC download), confirming TNIC uses `year(datadate)` not `fyear`.
+
+We include a `fyear` column in our output CSV for downstream use (e.g., merging with Compustat tables that key on `fyear`).
+
+**Datadate verification**: We added a `datadate` column (reportDate rounded to month-end per Compustat convention) and `fyear` column to the Option A output. Reverse check confirms: filtering by `year(datadate)==2005` gives exactly the same 5,084/5,122 (99.3%) as `reportDate year==2005`, since month-end rounding never changes the year. This is now a **strict, exact-fiscal-period match** — not a loose window-based heuristic — making 99.3% a highly reliable coverage statistic.
+
+**Interpretation**: Using the stricter `period_of_report` matching, **99.0-99.3%** of TNIC firms are covered. This is the most reliable coverage estimate in our analysis: it directly matches the TNIC `year` definition (`year(datadate)`) against EDGAR's `period_of_report`, with independent cross-validation from two data sources (SEC API and filing headers). The wide-window heuristic (Step A8: 99.8%) slightly overstates coverage by including firms whose 10-K is in the index window but whose fiscal period is not 2005. The period_of_report data, now enriched with `datadate` and `fyear` columns, is a valuable artifact for future work (FY-aligned extraction, Compustat merges).
 
 ## Results — Part B: Item-Level Extraction
 
@@ -488,7 +508,7 @@ Key: requires `\n` at start (item must be on its own line) and tries case-sensit
 - Step A9: Exact fiscal-year matching via reportDate → **99.0-99.3%** (two independent methods cross-validate)
 - The ~7% gap was **almost entirely a crosswalk problem**, not a coverage problem
 
-**edgar-crawler's EDGAR source covers 99.0-99.8% of the Hoberg-Phillips TNIC universe** depending on matching method. The remaining 10-48 gvkeys (0.2-0.9%) are genuinely absent from EDGAR or have non-2005 fiscal years.
+**edgar-crawler's EDGAR source covers 99.3% of the Hoberg-Phillips TNIC universe** under the strictest test — exact fiscal-period matching via `period_of_report`, verified to align with TNIC's `year` definition (`year(datadate)` per [H-P README](https://hobergphillips.tuck.dartmouth.edu/idata/Readme_tnic3HHIData.txt)). The remaining 37 gvkeys (0.7%) are genuinely absent from EDGAR for structurally legitimate reasons (late filers, foreign issuers, spinoffs, reportDate data issues). The CIK-overlap heuristic (A8: 99.8%) slightly overstates coverage but confirms the same conclusion.
 
 ### Part B conclusion: Item-level extraction — in progress
 

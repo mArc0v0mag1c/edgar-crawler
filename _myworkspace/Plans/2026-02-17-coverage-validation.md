@@ -573,16 +573,16 @@ Under **A8** (10 gvkeys / 0.2%) — genuinely absent from EDGAR 2005-2006 index:
 
 Under **A9** (38 gvkeys / 0.7%) — full diagnosis of all NOT_COVERED firms:
 
-| Category | Count | Example | Explanation |
-|----------|-------|---------|-------------|
-| SEC reportDate ≈ filingDate | 14 | Ball Corp (1988): FY04 rd=2004-12-31, FY05 rd=**2006-02-22**=fd, FY06 rd=2006-12-31 | Dec FY-end; SEC returns reportDate = filingDate for FY2005 |
-| SEC reportDate off-by-one | 3 | Interface Inc (6034): FY04 rd=2004-12-31, FY05 rd=**2006-01-01**, fd=2006-03-17 | Dec FY-end; reportDate = 2006-01-01 instead of 2005-12-31 |
-| Genuine non-December FY | 6 | Yum Brands (65417): FY ends 12/25 (52-wk); FY05 rd=2006-03-02 → datadate yr=2006 | 52/53-week years (Yum 12/25, Cheesecake 12/28), Jan (Trimble), Mar (Puget Sound) |
-| Missing FY2005 filing | 5 | Nature's Sunshine (7799): has FY04 rd=2004-12-31 and FY06, but no FY05 10-K at all | No 10-K for FY2005 in EDGAR (gap between FY2004 and FY2006) |
-| Late filer | 4 | American Italian Pasta (65570): FY2005 10-K filed in 2008 (3 years late) | FY2005 10-K filed years late (2007-2008), outside index window |
-| Spinoff / new entity | 4 | Celera Corp (127234): spun off in 2008, CIK 1428156 didn't exist until then | CIK didn't exist or wasn't filing until 2006+ |
-| Foreign private issuer | 1 | AXA S.A. (63120): files 6-K/13F only, never files 10-K | Foreign issuer exempt from 10-K requirement |
-| No crosswalk | 1 | gvkey 62642: no entry in wciklink_gvkey at all | Cannot map to any CIK |
+| Category | Count | Key Insight | Example |
+|----------|-------|-------------|---------|
+| SEC reportDate ≈ filingDate | 14 | Dec FY-end; SEC returns rd = filingDate | Ball Corp (1988): FY04 rd=2004-12-31, FY05 rd=**2006-02-22**=fd, FY06 rd=2006-12-31 |
+| SEC reportDate off-by-one | 3 | Dec FY-end; rd = 2006-01-01 instead of 2005-12-31 | Interface Inc (6034): FY04 rd=2004-12-31, FY05 rd=**2006-01-01**, fd=2006-03-17 |
+| Genuine non-December FY | 6 | 52/53-wk years or Jan/Mar FY-end | Yum Brands (65417): FY ends 12/25; FY05 rd=2006-03-02 → datadate yr=2006 |
+| Missing FY2005 filing | 5 | No 10-K for FY2005 in EDGAR at all | Nature's Sunshine (7799): has FY04 rd=2004-12-31 and FY06, no FY05 |
+| Late filer | 4 | FY2005 10-K filed years late (2007-2008) | American Italian Pasta (65570): FY05 10-K filed in 2008 (3 yrs late) |
+| Spinoff / new entity | 4 | CIK didn't exist or wasn't filing until 2006+ | Celera Corp (127234): spun off 2008, CIK 1428156 didn't exist |
+| Foreign private issuer | 1 | Foreign issuer exempt from 10-K | AXA S.A. (63120): files 6-K/13F only, never files 10-K |
+| No crosswalk | 1 | Cannot map to any CIK | gvkey 62642: no entry in wciklink_gvkey at all |
 | **Total** | **38** | | |
 
 The 28-firm gap between A8 (10) and A9 (38) is explained by: 17 SEC reportDate data quality issues (would match if reportDate were correct), 6 genuine non-Dec FY firms (their FY2005 has datadate in 2006), and 5 firms with missing FY2005 filings

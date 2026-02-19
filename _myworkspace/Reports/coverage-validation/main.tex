@@ -1,0 +1,267 @@
+\documentclass[11pt]{article}
+\usepackage{marcoreport}
+\usepackage{listings}
+\usepackage{xcolor}
+
+% Code listing style (inherited from tool-exploration)
+\lstset{
+  language=Python,
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{blue!70!black},
+  commentstyle=\color{green!50!black},
+  stringstyle=\color{red!60!black},
+  backgroundcolor=\color{gray!5},
+  frame=single,
+  framerule=0.4pt,
+  rulecolor=\color{gray!50},
+  breaklines=true,
+  showstringspaces=false,
+  tabsize=4,
+  aboveskip=0.8\baselineskip,
+  belowskip=0.8\baselineskip
+}
+
+\title{Coverage Validation: \texttt{edgar-crawler} vs Hoberg-Phillips TNIC}
+\author{Marco Zhang}
+\date{February 2026}
+
+\begin{document}
+\maketitle
+
+% ---------------------------------------------------------------------------
+% Section 1: Where We Are & Goal
+% ---------------------------------------------------------------------------
+\section{Current Stage \& Goal}
+
+In the previous report, we explored \texttt{edgar-crawler}'s mechanics: how it
+downloads filings from EDGAR, parses raw HTML/txt, and extracts item-level text.
+We documented configuration caveats (exact filing-type matching misses 47\% of
+variants, item lists need manual upkeep across SEC eras) and confirmed extraction
+reliability across 1993--2024.
+
+The next question: \textbf{how does edgar-crawler's coverage compare to an
+established benchmark?} We choose Hoberg-Phillips TNIC (2005) because (1)~it is
+widely used in finance/accounting research, (2)~it is built from 10-K Item~1
+extractions---the same task \texttt{edgar-crawler} performs, and (3)~it publishes
+both data (pairwise similarity scores by gvkey-year) and replication code (Python
+notebooks). This lets us validate at two levels: file-level (do both tools see
+the same firms?) and item-level (do both tools extract the same text?).
+
+% ---------------------------------------------------------------------------
+% Section 2: File-Level Coverage
+% ---------------------------------------------------------------------------
+\section{File-Level Coverage}
+
+TNIC uses Compustat gvkeys---its universe is public companies traded on the
+three major US exchanges. EDGAR uses CIK as identifier, covering all SEC
+registrants (small business filers, foreign issuers, shell companies), so it is
+much broader.
+
+We match EDGAR filings to TNIC firms using the WRDS \texttt{wciklink\_gvkey}
+crosswalk (historical CIK-gvkey mapping from the SEC Analytics Suite). We filter
+EDGAR filings by \texttt{year(datadate) == 2005}, which exactly matches TNIC's
+year definition---confirmed from H-P's own
+README\footnote{\url{https://hobergphillips.tuck.dartmouth.edu/idata/Readme_tnic3HHIData.txt}}:
+\emph{``the year field in this database is based on Compustat calendar years
+obtained as the first four digits of the YYYYMMDD datadate variable.''}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lrrl}
+\toprule
+Method & FY2005 CIKs & TNIC Covered & Rate \\
+\midrule
+SEC API + pagination & 12,038 & 5,084 / 5,122 & \textbf{99.3\%} \\
+\bottomrule
+\end{tabular}
+\caption{File-level coverage: EDGAR vs TNIC (2005).}
+\end{table}
+
+This is a strict, exact-fiscal-period match---not a loose filing-window
+heuristic---making 99.3\% a reliable statistic. Good enough to proceed from
+file-level to item-level comparison.
+
+% --- Filing type breakdown ---
+\subsection{Filing Type Breakdown}
+
+Among the 5,137 TNIC-matched CIKs with FY2005 filings, \textbf{$\sim$94\% file
+10-K and $\sim$6\% file 10KSB}:
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lrl}
+\toprule
+Filing Type & TNIC-Matched Firms & \% \\
+\midrule
+10-K / 10-K/A   & 4,824 & 93.9\% \\
+10KSB / 10KSB/A & 313   & 6.1\%  \\
+\bottomrule
+\end{tabular}
+\caption{Filing type distribution among TNIC-matched FY2005 firms (Compustat universe).}
+\end{table}
+
+This tells us that for pre-2009 data (before the SEC eliminated the 10KSB form),
+we need parsing methodology that handles 10KSB filings---not just 10-K.
+
+If we want to use the \textbf{full EDGAR CIK universe} (not just TNIC-matched),
+the 10KSB share is even larger:
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lrl}
+\toprule
+Filing Type & Count & Share \\
+\midrule
+10-K      & 9,003 & 59.9\% \\
+10KSB     & 3,223 & 21.5\% \\
+10-K/A    & 1,517 & 10.1\% \\
+10KSB/A   & 1,262 & 8.4\% \\
+10-KT / 10-KT/A & 19 & 0.1\% \\
+\midrule
+\textbf{10-K variants} & \textbf{10,520} & \textbf{73.7\%} \\
+\textbf{10KSB variants} & \textbf{4,485} & \textbf{26.2\%} \\
+\bottomrule
+\end{tabular}
+\caption{FY2005 filing type breakdown across all EDGAR CIKs.}
+\end{table}
+
+So for full-universe coverage, we need parsing methodology for more than just
+10-K and 10KSB---amendment variants (10-K/A, 10KSB/A) and transition reports
+(10-KT) also need handling.
+
+% --- The last 0.7% ---
+\subsection{The Last 0.7\%}
+
+We diagnosed all 38 NOT\_COVERED gvkeys. The largest category (17/38 = 45\%) is
+\textbf{SEC API data quality issues}---the filings exist in EDGAR, but the SEC
+API returns an incorrect \texttt{reportDate} (equal to the filing date, or off by
+one day), so our year-matching filter misses them.
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{lrll}
+\toprule
+Category & Count & Key Insight & Example \\
+\midrule
+SEC rd $\approx$ filingDate & 14 & Dec FY-end; SEC returns rd = fd & Ball Corp \\
+SEC rd off-by-one           & 3  & rd = 2006-01-01 not 2005-12-31 & Interface Inc \\
+Genuine non-Dec FY          & 6  & 52/53-wk years or Jan/Mar FY   & Yum Brands \\
+Missing FY2005 filing       & 5  & No 10-K for FY2005 in EDGAR    & Nature's Sunshine \\
+Late filer                  & 4  & FY05 10-K filed years late      & Am.\ Italian Pasta \\
+Spinoff / new entity        & 4  & CIK didn't exist until 2006+   & Celera Corp \\
+Foreign private issuer      & 1  & Files 6-K only, not 10-K       & AXA S.A. \\
+No crosswalk                & 1  & No wciklink entry              & gvkey 62642 \\
+\midrule
+\textbf{Total}              & \textbf{38} & & \\
+\bottomrule
+\end{tabular}
+\caption{Diagnosis of all 38 NOT\_COVERED gvkeys (0.7\% gap).}
+\end{table}
+
+% ---------------------------------------------------------------------------
+% Section 3: Item-Level Extraction
+% ---------------------------------------------------------------------------
+\section{Item-Level Extraction}
+
+H-P only extract Item~1 (Business Description) and only provide replication code
+for that item, so we focus our comparison on Item~1. We use
+\texttt{edgar-crawler}'s 62 test fixture 10-K filings (spanning 1993--2023, mixed
+\texttt{.txt}/\texttt{.htm} formats) and run both parsers on each filing:
+
+\begin{itemize}
+  \item \textbf{edgar-crawler}: \texttt{ExtractItems} class with
+    \texttt{items\_to\_extract=["1"]}, \texttt{lxml} parser, newline-anchored
+    regex.
+  \item \textbf{H-P}: reimplemented from their Notebook~2---4-regex cascade,
+    BeautifulSoup \texttt{html.parser}, longest-match disambiguation, 2KB minimum
+    filter.
+\end{itemize}
+
+We compare the extracted Item~1 text using word-level Jaccard similarity.
+
+% --- Results ---
+\subsection{Results}
+
+\textbf{Extraction success rate}:
+\begin{itemize}
+  \item edgar-crawler: \textbf{62/62 (100\%)}
+  \item H-P: \textbf{35/62 (56.5\%)}
+\end{itemize}
+
+\textbf{Jaccard similarity} (35 filings where both extracted):
+Mean = 0.910, Median = 0.946, Min = 0.241, Max = 0.999.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lrll}
+\toprule
+Category & Count & Share & Description \\
+\midrule
+MATCH          & 16 & 16/35 & Jaccard $\geq$ 0.95, essentially identical \\
+BOUNDARY\_DIFF & 17 & 17/35 & Jaccard 0.70--0.95, same core, different boundaries \\
+MAJOR\_DIFF    & 2  & 2/35  & Jaccard $<$ 0.70, substantially different \\
+EC\_ONLY       & 27 & ---   & edgar-crawler extracted, H-P did not \\
+HP\_ONLY       & 0  & ---   & H-P extracted, edgar-crawler did not \\
+BOTH\_EMPTY    & 0  & ---   & Neither extracted anything \\
+\bottomrule
+\end{tabular}
+\caption{Item~1 extraction comparison across 62 test fixture filings.}
+\end{table}
+
+% --- Key Findings ---
+\subsection{Key Findings}
+
+\textbf{1. H-P fails on all pre-2004 filings (27 EC\_ONLY).}
+H-P's regex looks for \texttt{item 1 ... item 1a/1b} boundaries, but many older
+filings go directly from ``ITEM~1. BUSINESS'' to ``ITEM~2. PROPERTIES''---no
+Item~1A ``Risk Factors'' (not mandatory until the 2005 SEC rule change). H-P
+cannot find an ending boundary, so it returns nothing. edgar-crawler handles this
+by trying all subsequent items as end boundaries
+(1A $\to$ 1B $\to$ 2 $\to$ 3 $\to$ \ldots $\to$ SIGNATURE).
+
+\textbf{2. H-P includes Table of Contents pollution (BOUNDARY\_DIFF).}
+In 15 of 17 BOUNDARY\_DIFF cases, H-P's extraction starts earlier---capturing
+``Item~1'' from the Table of Contents and extending to ``Item~1A'' in the body.
+edgar-crawler avoids this via newline-anchored regex (\texttt{\textbackslash n}
+at start of item header), which filters out inline ToC references. For modern
+iXBRL filings (2019+), H-P also captures raw HTML/CSS because
+\texttt{BeautifulSoup('html.parser')} doesn't fully parse inline XBRL tags.
+
+\textbf{3. Two MAJOR\_DIFF cases.}
+\begin{itemize}
+  \item Horizon Financial 2009 (J=0.24): H-P extracted 15KB (ToC fragment only),
+    edgar-crawler extracted 139KB (full Item~1).
+  \item FedEx 2023 (J=0.34): H-P extracted 530KB (raw HTML including
+    CSS/iXBRL), edgar-crawler extracted 112KB (clean text).
+\end{itemize}
+
+\textbf{4. When both succeed, they agree closely.}
+For the 33 filings with Jaccard $\geq$ 0.70, the mean Jaccard is 0.946.
+Remaining differences are boundary choices (H-P includes the trailing ``Item~1A''
+header) and table removal (edgar-crawler strips numerical tables).
+
+\textbf{5. Year distribution confirms the pattern is era-driven.}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lrrrrr}
+\toprule
+Era & MATCH & BOUNDARY\_DIFF & MAJOR\_DIFF & EC\_ONLY & Total \\
+\midrule
+1993--1999 & 0  & 0  & 0 & 14 & 14 \\
+2000--2004 & 1  & 0  & 0 & 9  & 10 \\
+2005--2010 & 3  & 5  & 1 & 3  & 12 \\
+2011--2023 & 12 & 12 & 1 & 1  & 26 \\
+\bottomrule
+\end{tabular}
+\caption{Extraction comparison by era. Pre-2005: H-P extracts almost nothing
+(23/24 EC\_ONLY). Post-2010: both work on 24/26 filings (92\%).}
+\end{table}
+
+Pre-2005: H-P extracts almost nothing---no Item~1A boundary available. 2005--2010:
+transition period, H-P starts working. 2011--2023: both work on 24/26 filings
+(92\%); BOUNDARY\_DIFFs are consistently ToC pollution. The 2005 cutoff aligns
+with SEC's mandatory Item~1A (Risk Factors) requirement.
+
+\end{document}

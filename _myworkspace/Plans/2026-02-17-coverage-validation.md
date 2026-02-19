@@ -532,6 +532,9 @@ Pre-2005: H-P extracts almost nothing (23/24 EC_ONLY) — no Item 1A boundary av
 | H-P replication exercise | `/tmp/hp_code/code/` (extracted from [zip](https://hobergphillips.tuck.dartmouth.edu/computational_linguistics_exercise.zip)) |
 | B3 extraction comparison script | `Code/CoverageValidation/compare_extraction_b3.py` |
 | B3 extraction comparison results | `Output/CoverageValidation/extraction_comparison_b3.csv` |
+| A9 gap diagnosis (24 firms) | `/tmp/rediagnose_24.py` (SEC data errors vs genuine non-Dec FY) |
+| A9 gap diagnosis (4 mismatch) | `/tmp/check_4_mismatch.py` (missing FY2005 filings) |
+| A9 gap diagnosis (all 38) | `/tmp/diagnose_37_not_covered.py` (initial pass, corrected by rediagnose) |
 
 ---
 
@@ -560,12 +563,29 @@ Pre-2005: H-P extracts almost nothing (23/24 EC_ONLY) — no Item 1A boundary av
 | A9 | reportDate match (API pagination) | 5,084 | 99.3% | 1 |
 | A9 | reportDate match (filing headers) | 5,073 | 99.0% | 1 |
 
-**Remaining gap** (10 gvkeys / 0.2% under A8; 37-48 under A9) — all structurally explained:
+**Remaining gap** — all structurally explained:
+
+Under **A8** (10 gvkeys / 0.2%) — genuinely absent from EDGAR 2005-2006 index:
 - 4 **late filers** — 10-K for FY2005 filed years late (2007-2008), outside the 2005-2006 index window
 - 4 **spinoffs/new entities** — CIK didn't exist or wasn't filing in 2005
 - 1 **foreign private issuer** — AXA S.A. files 6-K only, never files 10-K
-- 1 gvkey has no wciklink entry at all
-- A9's additional ~28 uncovered firms (vs A8) are firms whose fiscal year doesn't end in calendar 2005 but whose 10-K was filed within the 2005-2006 index window
+- 1 **no crosswalk** — gvkey has no wciklink entry at all
+
+Under **A9** (38 gvkeys / 0.7%) — full diagnosis of all NOT_COVERED firms:
+
+| Category | Count | Explanation |
+|----------|-------|-------------|
+| SEC reportDate ≈ filingDate | 14 | December FY-end; SEC API returns reportDate = filingDate for FY2005 (e.g., Ball Corp: FY2004→2004-12-31, FY2005→2006-02-22=filingDate, FY2006→2006-12-31) |
+| SEC reportDate off-by-one | 3 | December FY-end; reportDate = 2006-01-01 instead of 2005-12-31 (Interface, SFN Group, Cost U Less) |
+| Genuine non-December FY | 6 | Fiscal year ends outside December: 52/53-week years (Cheesecake Factory 12/28, Yum 12/25, Einstein Noah 12/28), Jan FY-end (Trimble), Mar FY-end (Puget Sound), or unknown (Caribou Coffee) |
+| Missing FY2005 filing | 5 | No 10-K for FY2005 exists in EDGAR at all (gap between FY2004 and FY2006): Nature's Sunshine, DHB Capital, SS&C Technologies, TaoWeave, Energy Focus |
+| Late filer | 4 | FY2005 10-K filed years late (2007-2008) |
+| Spinoff / new entity | 4 | CIK didn't exist or wasn't filing until 2006+ |
+| Foreign private issuer | 1 | AXA S.A. — files 6-K/13F only |
+| No crosswalk | 1 | No wciklink entry |
+| **Total** | **38** | |
+
+The 28-firm gap between A8 (10) and A9 (38) is explained by: 17 SEC reportDate data quality issues (would match if reportDate were correct), 6 genuine non-Dec FY firms (their FY2005 has datadate in 2006), and 5 firms with missing FY2005 filings
 
 **Root cause progression**:
 - Steps A4-A7: Compustat's native CIK is backfilled (company = funda = fundq), missing historical links → ~7-10% gap
@@ -575,7 +595,7 @@ Pre-2005: H-P extracts almost nothing (23/24 EC_ONLY) — no Item 1A boundary av
 - Step A9: Exact fiscal-year matching via reportDate → **99.0-99.3%** (two independent methods cross-validate)
 - The ~7% gap was **almost entirely a crosswalk problem**, not a coverage problem
 
-**edgar-crawler's EDGAR source covers 99.3% of the Hoberg-Phillips TNIC universe** under the strictest test — exact fiscal-period matching via `period_of_report`, verified to align with TNIC's `year` definition (`year(datadate)` per [H-P README](https://hobergphillips.tuck.dartmouth.edu/idata/Readme_tnic3HHIData.txt)). The remaining 37 gvkeys (0.7%) are genuinely absent from EDGAR for structurally legitimate reasons (late filers, foreign issuers, spinoffs, reportDate data issues). The CIK-overlap heuristic (A8: 99.8%) slightly overstates coverage but confirms the same conclusion.
+**edgar-crawler's EDGAR source covers 99.3% of the Hoberg-Phillips TNIC universe** under the strictest test — exact fiscal-period matching via `period_of_report`, verified to align with TNIC's `year` definition (`year(datadate)` per [H-P README](https://hobergphillips.tuck.dartmouth.edu/idata/Readme_tnic3HHIData.txt)). The remaining 38 gvkeys (0.7%) are fully diagnosed: 17 are SEC reportDate data quality issues (the filings exist but reportDate is wrong — either equals the filingDate or is off by one day), 6 are genuine non-December fiscal years, 5 have no FY2005 filing in EDGAR, 4 are late filers, 4 are spinoffs/new entities, 1 is a foreign issuer, and 1 has no crosswalk. Notably, if SEC reportDate data were correct, coverage would be ~99.6%. The CIK-overlap heuristic (A8: 99.8%) slightly overstates coverage but confirms the same conclusion.
 
 ### Part B conclusion: Item-level extraction validated
 

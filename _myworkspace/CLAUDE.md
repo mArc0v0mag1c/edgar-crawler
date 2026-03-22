@@ -63,7 +63,7 @@ Within each Output subfolder, optionally organize by script name:
 
 ## Reports
 
-- Reports live in `Reports/<name>/main.tex` using `\usepackage{marcoreport}`
+- Reports live in `Reports/YYYY-MM-DD-<name>/main.tex` using `\usepackage{marcoreport}`
 - **Read `Reports/STYLE-GUIDE.md` before writing any report** — it defines the exact structure, workflow, and content principles
 
 ## Coding Style

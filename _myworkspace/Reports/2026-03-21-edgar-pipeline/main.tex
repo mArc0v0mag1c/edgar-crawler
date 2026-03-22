@@ -1,0 +1,238 @@
+\documentclass[11pt]{article}
+\usepackage{marcoreport}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{longtable}
+
+% Code listing style
+\lstset{
+  language=Python,
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{blue!70!black},
+  commentstyle=\color{green!50!black},
+  stringstyle=\color{red!60!black},
+  backgroundcolor=\color{gray!5},
+  frame=single,
+  framerule=0.4pt,
+  rulecolor=\color{gray!50},
+  breaklines=true,
+  showstringspaces=false,
+  tabsize=4,
+  aboveskip=0.8\baselineskip,
+  belowskip=0.8\baselineskip
+}
+
+% Bash listing style
+\lstdefinestyle{bash}{
+  language=bash,
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{blue!70!black},
+  commentstyle=\color{green!50!black},
+  backgroundcolor=\color{gray!5},
+  frame=single,
+  framerule=0.4pt,
+  rulecolor=\color{gray!50},
+  breaklines=true,
+  showstringspaces=false,
+  aboveskip=0.8\baselineskip,
+  belowskip=0.8\baselineskip
+}
+
+\title{EDGAR Filing Download \& Extraction Pipeline}
+\author{Marco Zhang}
+\date{March 2026}
+
+\begin{document}
+\maketitle
+
+% ---------------------------------------------------------------------------
+\section{Introduction}
+% ---------------------------------------------------------------------------
+
+This document describes the design and implementation of a production pipeline to download and extract SEC filings (10-K, 10-Q, 10KSB, 10QSB) for all firms across all years (1996--present). The pipeline is designed to run on the Mercury computing cluster at UChicago Booth, with local development and testing.
+
+\subsection*{Scope}
+
+\begin{itemize}
+  \item \textbf{Filing types}: 10-K, 10-Q, 10KSB, 10QSB (no amendments or 8-K)
+  \item \textbf{Coverage}: All CIKs in EDGAR, 1996--present (~30 years)
+  \item \textbf{Output}: Per-filing JSON (item-level text) and consolidated Parquet (one file per type $\times$ fiscal year)
+\end{itemize}
+
+\subsection*{Why a new pipeline?}
+
+The upstream \texttt{edgar-crawler} tool works well for small-scale extraction but has limitations for production-scale use:
+
+\begin{enumerate}
+  \item \textbf{No year-level parallelism}: The original \texttt{main()} processes all years sequentially in one process. On a cluster with SLURM, we want one job per year running in parallel.
+  \item \textbf{No resumability}: If a download is interrupted, there is no clean way to detect which filings are missing and resume.
+  \item \textbf{Interactive prompts}: \texttt{download\_indices()} prompts ``Retry (Y/N)'' on failure---this hangs in batch mode.
+  \item \textbf{Output organization}: The original organizes extracted JSON by filing type only. We need organization by \texttt{period\_of\_report} year for efficient downstream access (e.g., ``give me all 10-K MD\&A sections for fiscal year 2020'').
+\end{enumerate}
+
+% ---------------------------------------------------------------------------
+\section{Design Decisions}
+% ---------------------------------------------------------------------------
+
+\subsection{Filing date vs.\ period of report}
+
+EDGAR indices are organized by \emph{filing date}---the date the firm submitted the document. But researchers care about \emph{period of report}---the fiscal period the filing covers. A 10-K filed on 2024-02-28 with \texttt{period\_of\_report = 2023-12-31} is a fiscal year 2023 filing.
+
+The problem: \texttt{period\_of\_report} is not in the EDGAR index. It is only available after crawling each filing's HTML index page (the \texttt{crawl()} function in \texttt{download\_filings.py}, line 525--527). This means:
+
+\begin{itemize}
+  \item \textbf{Progress tracking} uses filing-date year (known before download)
+  \item \textbf{Output organization} uses period-of-report year (known after download)
+\end{itemize}
+
+This creates a slight asymmetry: a ``download year 2023'' job will produce output files scattered across period-of-report years 2022 and 2023 (since Q1 filings in Jan--Feb 2023 often have POR in late 2022). This is acceptable because each extracted JSON lands in the correct POR-year folder regardless of which download job produced it.
+
+\subsection{Reuse vs.\ rewrite}
+
+We vendor the core functions from \texttt{edgar-crawler} rather than rewriting them:
+
+\begin{itemize}
+  \item \texttt{download\_indices()}: Downloads EDGAR quarterly index files
+  \item \texttt{get\_specific\_indices()}: Filters index by filing type and CIK
+  \item \texttt{crawl()}: Fetches filing HTML index, extracts metadata including \texttt{period\_of\_report}
+  \item \texttt{download()}: Downloads the actual filing document
+  \item \texttt{ExtractItems.extract\_items()}: Full extraction pipeline (HTML strip $\to$ item parse $\to$ JSON)
+\end{itemize}
+
+We apply targeted modifications (documented in \texttt{CHANGELOG.md}):
+\begin{enumerate}
+  \item Make \texttt{DATASET\_DIR} configurable at runtime via \texttt{set\_data\_dir()}
+  \item Remove interactive \texttt{input()} prompt in \texttt{download\_indices()}
+  \item Extend filing type matching in \texttt{determine\_items\_to\_extract()} and \texttt{extract\_items()}: upstream uses exact equality (\texttt{== "10-K"}), changed to support variants (\texttt{10-KT}, \texttt{10KSB}, \texttt{10QSB}, \texttt{8-K/A}). Done during tool exploration phase.
+  \item Convert all imports to relative package imports
+\end{enumerate}
+
+\subsection{JSON + Parquet dual output}
+
+We produce two output formats:
+
+\begin{itemize}
+  \item \textbf{Per-filing JSON}: One file per filing, organized by type and period-of-report year. Useful for inspecting individual filings.
+  \item \textbf{Consolidated Parquet}: One file per type $\times$ POR year. Columnar format with snappy compression enables selective column reads---e.g., loading only MD\&A without all other items.
+\end{itemize}
+
+% ---------------------------------------------------------------------------
+\section{Pipeline Architecture}
+% ---------------------------------------------------------------------------
+
+The pipeline has four sequential steps, each implemented as a standalone script that can be run independently or via SLURM job arrays.
+
+\subsection{Step 1: Build manifest (\texttt{build\_manifest.py})}
+
+Downloads all EDGAR quarterly index files and counts expected filings per type $\times$ filing-date year. This establishes the ground truth for progress tracking.
+
+\begin{itemize}
+  \item \textbf{Input}: SEC EDGAR full index (fetched from \texttt{sec.gov})
+  \item \textbf{Output}: \texttt{Data/raw/indices/*.tsv} + \texttt{Data/raw/manifest.csv}
+  \item \textbf{Runtime}: $\sim$30 minutes (one-time)
+\end{itemize}
+
+The manifest records how many filings of each type exist per year, so \texttt{check\_progress.py} can report completion percentages.
+
+\subsection{Step 2: Download by year (\texttt{download\_by\_year.py})}
+
+Downloads all filings of our four types for a single filing-date year. Designed for SLURM job arrays: \texttt{--array=1996-2025} runs 30 parallel jobs.
+
+\begin{itemize}
+  \item \textbf{Input}: Index TSVs from Step 1
+  \item \textbf{Output}: Raw filings in \texttt{Data/raw/filings/\{type\}/}, per-year metadata CSV
+  \item \textbf{Progress}: \texttt{.running} $\to$ \texttt{.done} marker files in \texttt{Code/progress/}
+  \item \textbf{Resumability}: On restart, reads existing metadata CSV, skips filings already on disk
+\end{itemize}
+
+For each filing, the script calls \texttt{crawl()} to fetch the HTML index page (extracting \texttt{period\_of\_report}, SIC, state, fiscal year end), then \texttt{download()} to fetch the actual document. Metadata is written atomically (via temp file + rename) after each successful download.
+
+\subsection{Step 3: Extract by year (\texttt{extract\_by\_year.py})}
+
+Runs item extraction on all downloaded filings for a given filing-date year, organizing output by period-of-report year.
+
+\begin{itemize}
+  \item \textbf{Input}: Raw filings + per-year metadata CSV from Step 2
+  \item \textbf{Output}: \texttt{Data/extracted/json-per-filing/\{type\}/\{por\_year\}/\{filename\}.json}
+  \item \textbf{Key}: A filing filed in 2021 with \texttt{period\_of\_report=2020-12-31} lands in \texttt{10-K/2020/}
+\end{itemize}
+
+We call \texttt{ExtractItems.extract\_items()} directly (not \texttt{process\_filing()}) to control the output path ourselves. One subtlety: \texttt{items\_to\_extract} must be reset to an empty list before each filing's \texttt{determine\_items\_to\_extract()} call. Otherwise, items from a previous filing type (e.g., 10-Q part-based items) persist and cause mismatches when extracting a different type (e.g., 10-K numbered items).
+
+\subsection{Step 4: Consolidate to Parquet (\texttt{consolidate\_parquet.py})}
+
+Converts all per-filing JSONs for a given type $\times$ period-of-report year into a single Parquet file.
+
+\begin{itemize}
+  \item \textbf{Input}: \texttt{Data/extracted/json-per-filing/\{type\}/\{year\}/*.json}
+  \item \textbf{Output}: \texttt{Data/extracted/parquet-per-type-year/\{type\}/\{year\}.parquet}
+  \item Can run with \texttt{--all} to process every type/year combination, or target a specific pair
+\end{itemize}
+
+% ---------------------------------------------------------------------------
+\section{Project Structure}
+% ---------------------------------------------------------------------------
+
+\begin{lstlisting}[style=bash]
+SEC_filings/
+|-- Code/
+|   |-- src/           # Pipeline scripts (Steps 1-4)
+|   |-- utils/         # Vendored from edgar-crawler
+|   |-- slurm/         # SLURM job submission scripts
+|   |-- test/          # Local test suite
+|   |-- progress/      # Year-level .running/.done markers
+|   |-- logs/          # SLURM output logs
+|   |-- CHANGELOG.md   # Modifications to vendored code
+|   `-- README.md
+|-- Data/
+|   |-- raw/
+|   |   |-- filings/{10-K,10-Q,10KSB,10QSB}/
+|   |   |-- indices/
+|   |   `-- manifest.csv
+|   `-- extracted/
+|       |-- metadata/FILINGS_METADATA_{year}.csv
+|       |-- json-per-filing/{type}/{por_year}/
+|       `-- parquet-per-type-year/{type}/{year}.parquet
+|-- Docs/              # Research artifacts (plans, reports)
+`-- DATA_DICTIONARY.md
+\end{lstlisting}
+
+% ---------------------------------------------------------------------------
+\section{SLURM Deployment}
+% ---------------------------------------------------------------------------
+
+The pipeline runs on the Mercury cluster at UChicago Booth. Each step maps to a SLURM submission:
+
+\begin{enumerate}
+  \item \textbf{Manifest} (interactive \texttt{srun}, one-time): Build the index and count expected filings.
+  \item \textbf{Download} (job array, \texttt{--array=1996-2025}): 30 parallel jobs, each downloading one year's filings. Wall time up to 7 days per job.
+  \item \textbf{Extraction} (job array, \texttt{--array=1996-2025}): 30 parallel jobs, each extracting items for one year. 8 GB memory per job.
+  \item \textbf{Consolidation} (single job): Converts all JSONs to Parquet. 16 GB memory.
+\end{enumerate}
+
+Each SLURM script uses \texttt{--account=pi-<advisor>} for collaborator-tier access and \texttt{module load python/booth/3.12} for the cluster Python environment.
+
+% ---------------------------------------------------------------------------
+\section{Verification}
+% ---------------------------------------------------------------------------
+
+A local test suite (\texttt{Code/test/run\_local\_test.py}) validates the full pipeline with a minimal scope: year 2023, three CIKs (Apple, Microsoft, Nicholas Financial). The test verifies:
+
+\begin{itemize}
+  \item Manifest creation and index download (4 quarterly TSVs)
+  \item Filing download (12 filings: 3 $\times$ 10-K + 9 $\times$ 10-Q) with metadata CSV and progress markers
+  \item Resumability (re-run skips already-downloaded filings)
+  \item Item extraction with correct period-of-report routing (filings filed 2023 with POR 2022 $\to$ \texttt{10-Q/2022/})
+  \item 10-K JSON has 23 item columns; item\_7 (MD\&A) contains substantive text
+  \item Parquet consolidation with selective column access
+\end{itemize}
+
+All tests pass. Run with:
+
+\begin{lstlisting}[style=bash]
+python Code/test/run_local_test.py         # runs and cleans up
+python Code/test/run_local_test.py --keep  # preserves test_data/
+\end{lstlisting}
+
+\end{document}

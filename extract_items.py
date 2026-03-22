@@ -166,16 +166,16 @@ class ExtractItems:
 
         Sets the items_to_extract attribute based on the filing type and the items provided by the user.
         """
-        if filing_metadata["Type"] == "10-K":
+        if filing_metadata["Type"] in ["10-K", "10-KT", "10KSB"]:
             items_list = item_list_10k
-        elif filing_metadata["Type"] == "8-K":
+        elif filing_metadata["Type"] in ["8-K", "8-K/A"]:
             # Prior to August 23, 2004, the 8-K items were named differently
             obsolete_cutoff_date_8k = pd.to_datetime("2004-08-23")
             if pd.to_datetime(filing_metadata["Date"]) > obsolete_cutoff_date_8k:
                 items_list = item_list_8k
             else:
                 items_list = item_list_8k_obsolete
-        elif filing_metadata["Type"] == "10-Q":
+        elif filing_metadata["Type"] in ["10-Q", "10QSB"]:
             items_list = item_list_10q
         else:
             raise Exception(
@@ -1082,7 +1082,7 @@ class ExtractItems:
         text = ExtractItems.clean_text(text)
 
         # For 10-Qs, need to separate the text into Part 1 and Part 2
-        if filing_metadata["Type"] == "10-Q":
+        if filing_metadata["Type"] in ["10-Q", "10QSB"]:
             part_texts = self.get_10q_parts(text, filing_metadata)
 
         positions = []

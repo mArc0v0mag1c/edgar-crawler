@@ -63,13 +63,70 @@ Full details in `SEC_filings/Code/CHANGELOG.md`.
 
 ---
 
-## Mercury Deployment (after access is granted)
+## Mercury Cluster Reference
+
+### Connection
+- **SSH**: `ssh mercury` (alias in `~/.ssh/config` → `mercury.chicagobooth.edu`, user `marcozhang`)
+- **VPN required** (off-campus): `vpn.chicagobooth.edu` via Cisco AnyConnect
+
+### Storage
+
+| Location | Size | Purpose |
+|----------|------|---------|
+| `/home/marcozhang` | 14 GB | Private home dir (collaborator tier) |
+| `/project/textual_analysis` | Terabytes | Shared research project storage |
+| `/scratch/$USER/$SLURM_JOB_ID` | 6 TB shared | Temp job files (auto-deleted after 35 days) |
+
+### SLURM Account
+```bash
+# Check account association
+sacctmgr show association where user=$USER format=cluster,account%24,user%24,qos
+
+# Collaborator format: --account=pi-<advisorID>
+```
+
+### Partitions
+
+| Partition | Max Cores | Max Mem/CPU | Max Wall Clock |
+|-----------|-----------|-------------|----------------|
+| interactive | 1 | 64 GB | 2h |
+| standard | 16 | 32 GB | 7d |
+| long | 16 | 32 GB | 14d |
+| highmem | 16 | 512 GB | 4d |
+
+### Software Modules
+Modules only available on **compute nodes** (not login nodes).
+```bash
+srun --account=<account> --pty bash --login   # interactive session first
+module load python/booth/3.12                  # then load modules
+```
+
+### Job Management
+```bash
+squeue --user=marcozhang          # your jobs
+scancel <jobid>                   # cancel a job
+sacct -j <jobid>                  # completed job info
+```
+
+### Support
+- Helpdesk: research.support@chicagobooth.edu
+- Docs: https://hpc-docs.chicagobooth.edu/
+
+---
+
+## Mercury Deployment
+
+### Current Access Status (2026-03-21)
+- SSH works (`ssh mercury` → connected)
+- **No SLURM account** — `sacctmgr show association` returns empty
+- **No `/project/textual_analysis/` access** — permission denied
+- Need to email helpdesk for both
 
 ### Prerequisites
 - SLURM account assigned (e.g., `--account=pi-<advisor>`)
-- Read/write access to `/project/textual_analysis/` (or designated project directory)
+- Read/write access to `/project/textual_analysis/`
 
-### Step-by-step
+### Step-by-step (after access is granted)
 
 **1. Copy code to Mercury**
 ```bash
